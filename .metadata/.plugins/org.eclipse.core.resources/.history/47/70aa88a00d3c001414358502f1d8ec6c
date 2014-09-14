@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">MapNavigation</string>
+    <string name="google_maps_demo_api_key">AIzaSyB0pkM2lXHSGgarnf8J1hv9r8jp8ZWfjWs</string>
+
+</resources>

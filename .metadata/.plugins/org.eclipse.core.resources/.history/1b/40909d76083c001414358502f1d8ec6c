@@ -1,0 +1,140 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    xmlns:pp="http://schemas.android.com/apk/res-auto"
+    xmlns:map="http://schemas.android.com/apk/res-auto" >
+
+    <!-- Title Bar -->
+
+    <RelativeLayout
+        android:id="@+id/titleBar"
+        style="@style/titlebar_container_style"
+        android:background="@color/title_bgcolor" >
+
+        <ImageView
+            android:id="@+id/menuImageView"
+            style="@style/titlebar_back_button"
+            android:contentDescription="@string/sw_refresh"
+            android:onClick="onBackButtonClick" />
+
+        <com.passportparking.mobile.i18n.PPTextView
+            android:id="@+id/viewHeader"
+            style="@style/titlebar_style_without_background"
+            android:text="@string/findmycar_window_title" />
+
+        <ImageView
+            style="@style/titlebar_right_button"
+            android:contentDescription="@string/sw_refresh"
+            android:onClick="onHelpClick" />
+    </RelativeLayout>
+
+    <!-- Activity form contents -->
+
+    <RelativeLayout
+        style="@style/form_map_container_style"
+        android:layout_above="@+id/buttonContainer"
+        android:layout_below="@id/titleBar" >
+
+        <fragment
+            android:id="@+id/mapView"
+            android:name="com.passportparking.mobile.PMapFragment"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <Button
+            android:id="@+id/btnMapTypeChange"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_alignParentRight="true"
+            android:layout_alignParentTop="true"
+            android:layout_gravity="center"
+            android:background="@drawable/imgbutbg"
+            android:onClick="onMapTypeChangeClick"
+            android:scaleType="fitCenter"
+            android:text="Map/Satelite"
+            android:textColor="#ffffff" />
+
+        <TextView
+            android:id="@+id/progressText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:background="#8C000000"
+            android:padding="5dp"
+            android:textColor="@color/text_color"
+            android:textSize="12sp" />
+    </RelativeLayout>
+
+    <LinearLayout
+        android:id="@+id/buttonContainer"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:background="@drawable/bottom_menu_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal" >
+
+        <LinearLayout
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical" >
+
+            <TextView
+                android:id="@+id/distance_Text"
+                android:layout_width="fill_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="100 m"
+                android:textColor="#000000"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/accuracy_Text"
+                android:layout_width="fill_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="100 m"
+                android:textColor="#000000"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="0"
+            android:gravity="center"
+            android:orientation="horizontal" >
+
+            <ImageButton
+                android:id="@+id/btnMyLoc"
+                android:layout_width="64dp"
+                android:layout_height="36dp"
+                android:layout_gravity="center"
+                android:background="@drawable/imgbutbg"
+                android:onClick="onMyLocClick"
+                android:scaleType="fitCenter"
+                android:src="@drawable/mylocation_marker_white" />
+
+            <ImageButton
+                android:id="@+id/btnCarLoc"
+                android:layout_width="64dp"
+                android:layout_height="36dp"
+                android:layout_gravity="center"
+                android:background="@drawable/imgbutbg"
+                android:onClick="onCarLocClick"
+                android:scaleType="fitCenter"
+                android:src="@drawable/carlocation_marker_white" />
+
+            <ImageButton
+                android:id="@+id/btnEditLoc"
+                android:layout_width="64dp"
+                android:layout_height="36dp"
+                android:layout_gravity="center"
+                android:background="@drawable/imgbutbg"
+                android:onClick="onEditLocClick"
+                android:scaleType="fitCenter"
+                android:src="@drawable/editlocation" />
+        </LinearLayout>
+    </LinearLayout>
+</RelativeLayout>

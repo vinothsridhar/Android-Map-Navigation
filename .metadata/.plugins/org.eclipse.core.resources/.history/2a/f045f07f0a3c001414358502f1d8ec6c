@@ -1,0 +1,393 @@
+package com.sri.mapnavigation;
+
+import android.content.DialogInterface;
+import android.location.GpsStatus;
+import android.location.Location;
+import android.location.LocationProvider;
+import android.os.Bundle;
+import android.support.v4.app.FragmentActivity;
+import android.view.LayoutInflater;
+import android.view.SurfaceView;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.ImageButton;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.maps.CameraUpdate;
+import com.google.android.gms.maps.CameraUpdateFactory;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.GoogleMap.OnMapClickListener;
+import com.google.android.gms.maps.GoogleMap.OnMarkerDragListener;
+import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.Circle;
+import com.google.android.gms.maps.model.CircleOptions;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
+import com.google.android.gms.maps.model.Marker;
+import com.google.android.gms.maps.model.MarkerOptions;
+
+public class MainActivity extends FragmentActivity implements PNavigationListener {
+
+	private GoogleMap map;
+	private LatLng myLatLng, carLatLng;
+	private Location myLocation;
+	private float rotate;
+	private PNavigationHelper findMyCarHelper;
+	private TextView distanceText, accuracyText, progressText;
+	private ImageButton btnMyLoc, btnEditLoc;
+	private Button btnMapTypeChange;
+	private static final String TAG = "FindMycarActivity";
+	private Marker carMarker, myLocMarker;
+	private Circle myLocCircle;
+	private boolean firstKnownLocation = false;
+	private String parkerentryid;
+	private boolean savelocation = false;
+
+	private static final int CIRCLE_FILL_COLOR = 0x505ec8ef;
+	private static final int CIRCLE_STROKE_COLOR = 0x755ec8ef;
+
+	@Override
+	public void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);
+		setContentView(R.layout.activity_main);
+		if (getIntent().getExtras() != null)
+			parkerentryid = getIntent().getExtras().getString("parkerentryid");
+
+		startNavigation();
+	}
+
+	@Override
+	public void onDestroy() {
+		super.onDestroy();
+		if (findMyCarHelper != null) {
+			findMyCarHelper.stopNavComponents();
+		}
+	}
+
+	@Override
+	public void onResume() {
+		super.onResume();
+		if (findMyCarHelper != null) {
+			findMyCarHelper.checkGPS();
+			findMyCarHelper.callActivityResumed();
+		}
+	}
+
+	@Override
+	protected void onPause() {
+		super.onPause();
+		if (findMyCarHelper != null) {
+			findMyCarHelper.callActivityPaused();
+		}
+	}
+
+	private void startNavigation() {
+		if (parkerentryid == null) {
+
+			return;
+		}
+		initUI();
+		initComponents();
+	}
+
+	private void initUI() {
+		distanceText = (TextView) findViewById(R.id.distance_Text);
+		accuracyText = (TextView) findViewById(R.id.accuracy_Text);
+		progressText = (TextView) findViewById(R.id.progressText);
+		btnMyLoc = (ImageButton) findViewById(R.id.btnMyLoc);
+		btnEditLoc = (ImageButton) findViewById(R.id.btnEditLoc);
+		btnMapTypeChange = (Button) findViewById(R.id.btnMapTypeChange);
+		btnMyLoc.setEnabled(false);
+		btnEditLoc.setEnabled(false);
+		btnMapTypeChange.setEnabled(false);
+	}
+
+	private void initComponents() {
+		int statusCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(this);
+		if (statusCode != ConnectionResult.SUCCESS) {
+			// Hide the map and the default error message
+			findViewById(R.id.mapView).setVisibility(View.GONE);
+
+			// Show a dialog
+			GooglePlayServicesUtil.getErrorDialog(statusCode, this, 0, new DialogInterface.OnCancelListener() {
+				@Override
+				public void onCancel(DialogInterface dialog) {
+					finish();
+				}
+			}).show();
+
+			return;
+		}
+
+		findMyCarHelper = new PNavigationHelper(this);
+		findMyCarHelper.setPNavigationListener(this);
+		carLatLng = findMyCarHelper.getCarLatLng(parkerentryid);
+
+		MapFragment mapView = (MapFragment) getSupportFragmentManager().findFragmentById(R.id.mapView);
+		map = mapView.getMap();
+
+		initMap();
+		updateMarkers();
+		updateCircles();
+	}
+
+	private void initMap() {
+		L.i("init map called");
+		map.setMyLocationEnabled(false);
+		map.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
+		map.setTrafficEnabled(false);
+		map.setBuildingsEnabled(true);
+		map.setOnMarkerDragListener(carMarkerDragListener);
+		map.setOnMapClickListener(carMapClickListener);
+	}
+
+	public void onMyLocClick(View view) {
+		showMyLocation();
+	}
+
+	public void onCarLocClick(View view) {
+		showCarLocation();
+	}
+
+	public void onEditLocClick(View view) {
+		if (!savelocation) {
+			showEditLocation();
+		} else {
+			showSaveLocation();
+		}
+	}
+
+	public void onMapTypeChangeClick(View view) {
+		changeMapType();
+	}
+
+	private void changeUi() {
+		float distanceInmeters = myLocation.distanceTo(PNavigationHelper.getLocation(carLatLng));
+		// double distanceInmeters = findDistance(myLatLng, carLatLng);
+		distanceText.setText("Distance: " + String.format("%.2f", distanceInmeters) + " m");
+		accuracyText.setText("Accuracy: " + myLocation.getAccuracy() + " m");
+
+		if (!firstKnownLocation) {
+			showLocationBounds();
+			// showCarLocation();
+			firstKnownLocation = true;
+		}
+
+		updateMarkers();
+		updateCircles();
+	}
+
+	public void updateMarkers() {
+		if (map == null) {
+			L.i(TAG, "Map is null.");
+			return;
+		}
+
+		if (myLocMarker == null) {
+			if (myLatLng != null)
+				myLocMarker = map.addMarker(new MarkerOptions().position(myLatLng).title("My Location").anchor(0.5f, 0.5f).icon(BitmapDescriptorFactory.fromResource(R.drawable.mylocation_marker))
+						.rotation(rotate));
+		} else {
+			if (myLatLng != null) {
+				synchronized (myLocMarker) {
+					myLocMarker.setPosition(myLatLng);
+					myLocMarker.setRotation((float) Math.toDegrees(rotate));
+				}
+			}
+		}
+
+		if (carMarker == null) {
+			if (carLatLng != null)
+				carMarker = map.addMarker(new MarkerOptions().position(carLatLng).icon(BitmapDescriptorFactory.fromResource(R.drawable.carlocation_marker)));
+		} else {
+			if (carLatLng != null)
+				if (!savelocation)
+					carMarker.setPosition(carLatLng);
+		}
+	}
+
+	public void updateCircles() {
+		if (map == null) {
+			L.i(TAG, "Map is null.");
+			return;
+		}
+
+		if (myLocCircle == null) {
+			if (myLatLng != null)
+				myLocCircle = map.addCircle(new CircleOptions().center(myLatLng).radius(myLocation.getAccuracy()).strokeWidth(1f).fillColor(CIRCLE_FILL_COLOR).strokeColor(CIRCLE_STROKE_COLOR));
+		} else {
+			if (myLatLng != null) {
+				myLocCircle.setRadius(myLocation.getAccuracy());
+				myLocCircle.setCenter(myLatLng);
+			}
+		}
+
+		// if (carCircle == null) {
+		// if (carLatLng != null)
+		// carCircle = map.addCircle(new
+		// CircleOptions().center(carLatLng).radius(5f).strokeWidth(1f).fillColor(CIRCLE_FILL_COLOR)
+		// .strokeColor(CIRCLE_STROKE_COLOR));
+		// } else {
+		// if (carLatLng != null)
+		// carCircle.setRadius(5f);
+		// }
+	}
+
+	public void changeMapType() {
+		if (map == null) {
+			return;
+		}
+
+		if (map.getMapType() == GoogleMap.MAP_TYPE_SATELLITE) {
+			map.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+		} else {
+			map.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
+		}
+
+		// map.clear();
+	}
+
+	public void showMyLocation() {
+		if (map == null) {
+			L.i(TAG, "Map is null.");
+			return;
+		}
+
+		CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngZoom(myLatLng, 18f);
+		map.moveCamera(cameraUpdate);
+	}
+
+	public void showCarLocation() {
+		if (map == null) {
+			L.i(TAG, "Map is null.");
+			return;
+		}
+
+		CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngZoom(carLatLng, 18f);
+		map.moveCamera(cameraUpdate);
+	}
+
+	private void showEditLocation() {
+
+		showCarLocation();
+		carMarker.setDraggable(true);
+		savelocation = true;
+		btnEditLoc.setImageResource(R.drawable.floppy);
+		Toast.makeText(this, "Drag and Drop the marker or Tap on the map", Toast.LENGTH_LONG).show();
+	}
+
+	private void showSaveLocation() {
+		saveLocationToLocal();
+		saveLocationToServer();
+		carMarker.setDraggable(false);
+		savelocation = false;
+		btnEditLoc.setImageResource(R.drawable.editlocation);
+	}
+
+	private void showLocationBounds() {
+		L.i(TAG, "Inside showlocationbounds.");
+		if (map == null) {
+			L.i(TAG, "Map is null.");
+			return;
+		}
+
+		LatLng southwest = myLatLng;
+		LatLng northeast = carLatLng;
+		if (southwest.latitude > carLatLng.latitude) {
+			southwest = carLatLng;
+			northeast = myLatLng;
+		}
+
+		CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngBounds(new LatLngBounds(southwest, northeast), 100, 100, 20);
+		map.moveCamera(cameraUpdate);
+	}
+
+	@Override
+	public void actionLocationChanged(Location location) {
+		btnMyLoc.setEnabled(true);
+		btnEditLoc.setEnabled(true);
+		btnMapTypeChange.setEnabled(true);
+		myLatLng = new LatLng(location.getLatitude(), location.getLongitude());
+		myLocation = location;
+		changeUi();
+	}
+
+	@Override
+	public void actionSensorChanged(float value) {
+		rotate = value;
+		updateMarkers();
+	}
+
+	@Override
+	public void actionGPSStatusChanged(int status) {
+		switch (status) {
+		case GpsStatus.GPS_EVENT_FIRST_FIX:
+			progressText.setText("GPS Service available.");
+			break;
+		case GpsStatus.GPS_EVENT_STARTED:
+			progressText.setText("GPS Service searching...");
+			break;
+		case GpsStatus.GPS_EVENT_STOPPED:
+			progressText.setText("GPS Service stopped");
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	@Override
+	public void actionProviderStatusChanged(int status) {
+		if (status == LocationProvider.OUT_OF_SERVICE) {
+			// ViewUtils.alert(this, "GPS Out of Service",
+			// "Its seems like your GPS device not working. Please try later.");
+			progressText.setText("GPS Out of service.");
+		} else if (status == LocationProvider.TEMPORARILY_UNAVAILABLE) {
+			// ViewUtils.alert(this, "GPS Temporarily unavailable",
+			// "GPS location not available right now. Please make sure you are outside.");
+			progressText.setText("GPS Temporarily unavailable.");
+		}
+	}
+
+	OnMapClickListener carMapClickListener = new OnMapClickListener() {
+
+		@Override
+		public void onMapClick(LatLng arg0) {
+			if (savelocation) {
+				carLatLng = arg0;
+				carMarker.setPosition(carLatLng);
+			}
+		}
+	};
+
+	OnMarkerDragListener carMarkerDragListener = new OnMarkerDragListener() {
+
+		@Override
+		public void onMarkerDragStart(Marker arg0) {
+		}
+
+		@Override
+		public void onMarkerDragEnd(Marker arg0) {
+			L.i(TAG, "Drag end position: " + arg0.getPosition().latitude);
+			carLatLng = arg0.getPosition();
+		}
+
+		@Override
+		public void onMarkerDrag(Marker arg0) {
+		}
+	};
+
+	private void saveLocationToLocal() {
+		String location = carLatLng.latitude + "," + carLatLng.longitude;
+		L.i("To save location: " + location);
+	}
+
+	private void saveLocationToServer() {
+		Toast.makeText(this, "Your car location saved successfully.", Toast.LENGTH_LONG).show();
+	}
+}

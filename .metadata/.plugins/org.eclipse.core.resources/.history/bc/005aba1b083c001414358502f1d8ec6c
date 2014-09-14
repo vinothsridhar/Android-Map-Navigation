@@ -1,0 +1,363 @@
+package com.sri.mapnavigation;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import android.app.Activity;
+import android.app.ActivityManager;
+import android.app.ActivityManager.RunningServiceInfo;
+import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.DialogInterface.OnClickListener;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.location.Location;
+import android.provider.Settings;
+
+import com.google.android.gms.maps.model.LatLng;
+import com.passportparking.mobile.services.PNavigationService;
+
+public class PNavigationHelper {
+
+	public static final long EARTH_RADIUS = 6371000;
+	private static final String TAG = "PNavigationHelper";
+	private Activity activity;
+
+	private PNavigationListener pNavigationListener;
+	private AlertDialog dialog = null;
+	private AlertDialog.Builder builder = null;
+
+	/* Constants */
+
+	public static final String ACTION_NAV_SERVICE = "ACTION_NAV_SERVICE"; // This
+																			// is
+																			// for
+																			// PNavigationService
+																			// action
+	public static final String NAV_ACTION = "NAV_ACTION";
+	public static final String ACTION_HELPER_SERVICE = "ACTION_HELPER_SERVICE"; // This
+																				// is
+																				// for
+																				// Helper
+																				// action
+	public static final String CHANGED_LOCATION = "CHANGED_LOCATION";
+	public static final String CHANGED_GPS_STATUS = "CHANGED_GPS_STATUS";
+	public static final String CHANGED_GPS_PROVIDER_STATUS = "CHANGED_GPS_PROVIDER_STATUS";
+	public static final String CHANGED_SENSOR = "CHANGED_SENSOR";
+
+	public static final int ACTIVITY_RUNNING = 10;
+	public static final int ACTIVITY_STOPPED = 11;
+	public static final int ACTIVITY_RESUMED = 12;
+	public static final int ACTIVITY_PAUSED = 13;
+	public static final int SERVICE_RUNNING = 15;
+	public static final int SERVICE_STOPPED = 16;
+	public static final int GPS_OFF = 20;
+	public static final int GPS_ON = 21;
+	public static final int ACTION_GPS_PROVIDER_STATUS_CHANGED = 22;
+	public static final int ACTION_SEARCHING_GPS = 23;
+	public static final int ACTION_GPS_SIGNAL_OK = 24;
+	public static final int ACTION_GPS_STATUS_CHANGED = 25;
+	public static final int ACTION_CHECKGPS = 30;
+	public static final int ACTION_STARTGPS = 31;
+	public static final int ACTION_LOCATION_CHANGED = 40;
+	public static final int ACTION_SENSOR_CHANGED = 50;
+	
+	public static final int GPS_STATUS_THRESHOLD_TIME = 3000;
+	public static final int SENSONR_CHANGE_THRESHOLD_ANGLE = 5;
+	
+
+	public PNavigationHelper(Activity activity) {
+		this.activity = activity;
+		init();
+	}
+
+	private void init() {
+		initNavUI();
+		initNavComponents();
+	}
+
+	private void initNavUI() {
+
+	}
+
+	private void initNavComponents() {
+		startService();
+		registerReceiver();
+		// sendInitialAction();
+	}
+
+	public void setPNavigationListener(PNavigationListener listener) {
+		this.pNavigationListener = listener;
+	}
+
+	public void stopNavComponents() {
+		stopService();
+		unregisterReceiver();
+	}
+
+	private void startService() {
+		if (!isNavServiceRunning(activity)) {
+			L.i(TAG, "Start service");
+			activity.startService(new Intent(activity, PNavigationService.class));
+		}
+	}
+
+	private void stopService() {
+		if (isNavServiceRunning(activity)) {
+			L.i(TAG, "Stop service");
+			activity.stopService(new Intent(activity, PNavigationService.class));
+		}
+	}
+
+	private void sendInitialAction() {
+		Intent i = new Intent();
+		i.putExtra(PNavigationHelper.NAV_ACTION, PNavigationHelper.ACTIVITY_RUNNING);
+		sendBroadCast(i);
+	}
+
+	private void registerReceiver() {
+		L.i(TAG, "Helper receiver started");
+		IntentFilter filter = new IntentFilter();
+		filter.addAction(PNavigationHelper.ACTION_HELPER_SERVICE);
+		activity.registerReceiver(helperReceiver, filter);
+	}
+
+	public void unregisterReceiver() {
+		Intent i = new Intent();
+		i.putExtra(PNavigationHelper.NAV_ACTION, PNavigationHelper.ACTIVITY_STOPPED);
+		sendBroadCast(i);
+		activity.unregisterReceiver(helperReceiver);
+	}
+
+	private void sendBroadCast(Intent i) {
+		// L.i(TAG, "Inside helper sendbroadcast");
+		i.setAction(PNavigationHelper.ACTION_NAV_SERVICE);
+		activity.sendBroadcast(i);
+	}
+
+	private BroadcastReceiver helperReceiver = new BroadcastReceiver() {
+
+		@Override
+		public void onReceive(Context paramContext, Intent paramIntent) {
+			// TODO Auto-generated method stub
+			String action = paramIntent.getAction();
+			if (action.equals(PNavigationHelper.ACTION_HELPER_SERVICE)) {
+				// L.i(TAG, "Helper receiver came.");
+				doAction(paramIntent);
+			}
+		}
+	};
+
+	private void doAction(Intent data) {
+		int action = data.getExtras().getInt(PNavigationHelper.NAV_ACTION);
+		switch (action) {
+		case PNavigationHelper.SERVICE_RUNNING:
+			L.i(TAG, "service running");
+			sendInitialAction();
+			checkGPS();
+			callActivityResumed();
+			break;
+		case PNavigationHelper.GPS_OFF:
+			L.i(TAG, "GPS Off");
+			showGPSDialog();
+			break;
+		case PNavigationHelper.GPS_ON:
+			L.i(TAG, "GPS On");
+			dismissGPSDialog();
+			startGPS();
+			break;
+		case PNavigationHelper.ACTION_LOCATION_CHANGED:
+//			L.i(TAG, "Location changed");
+			actionLocationChanged((Location) data.getExtras().getParcelable(PNavigationHelper.CHANGED_LOCATION));
+			break;
+		case PNavigationHelper.ACTION_GPS_PROVIDER_STATUS_CHANGED:
+//			L.i(TAG, "GPS status changed");
+			actionGPSProviderStatusChanged(data.getExtras().getInt(PNavigationHelper.CHANGED_GPS_PROVIDER_STATUS));
+			break;
+		case PNavigationHelper.ACTION_GPS_STATUS_CHANGED:
+//			L.i(TAG, "GPS status changed");
+			actionGPSStatusChanged(data.getExtras().getInt(PNavigationHelper.CHANGED_GPS_STATUS));
+			break;
+		case PNavigationHelper.ACTION_SENSOR_CHANGED:
+			// L.i(TAG, "Sensor changed");
+			actionSensorChanged(data.getExtras().getFloat(PNavigationHelper.CHANGED_SENSOR));
+			break;
+		}
+	}
+
+	private void actionGPSProviderStatusChanged(int status) {
+		pNavigationListener.actionProviderStatusChanged(status);
+	}
+	
+	private void actionGPSStatusChanged(int status) {
+		pNavigationListener.actionGPSStatusChanged(status);
+	}
+
+	private void actionSensorChanged(float value) {
+		pNavigationListener.actionSensorChanged(value);
+	}
+
+	private void actionLocationChanged(Location location) {
+		if (location == null) {
+			L.i(TAG, "Location is null.");
+			return;
+		}
+
+		pNavigationListener.actionLocationChanged(location);
+	}
+
+	public void checkGPS() {
+		Intent i = new Intent();
+		i.putExtra(PNavigationHelper.NAV_ACTION, PNavigationHelper.ACTION_CHECKGPS);
+		sendBroadCast(i);
+	}
+
+	private void startGPS() {
+		Intent i = new Intent();
+		i.putExtra(PNavigationHelper.NAV_ACTION, PNavigationHelper.ACTION_STARTGPS);
+		sendBroadCast(i);
+	}
+
+	private void showGPSDialog() {
+		if (builder == null) {
+			builder = new AlertDialog.Builder(activity);
+			builder.setMessage("You must have turned on GPS. \nGo to Settings?").setPositiveButton("Yes", new OnClickListener() {
+
+				@Override
+				public void onClick(DialogInterface arg0, int arg1) {
+					activity.startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+				}
+			}).setNegativeButton("No", new OnClickListener() {
+
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+					activity.finish();
+				}
+			}).setCancelable(false);
+
+			dialog = builder.create();
+		}
+
+		if (dialog != null && !dialog.isShowing())
+			dialog.show();
+	}
+
+	private void dismissGPSDialog() {
+		if (dialog != null && dialog.isShowing()) {
+			dialog.dismiss();
+		}
+	}
+
+	public static double findDistance(LatLng latLng1, LatLng latLng2) {
+
+		// http://www.ig.utexas.edu/outreach/googleearth/latlong.html
+
+		/*
+		 * Should convert all the values to radians before find any
+		 * sine,cosine,tangent values
+		 */
+
+		L.i(TAG, "**---My location --**");
+		L.i(TAG, "--> " + latLng1.latitude + "," + latLng1.longitude);
+		L.i(TAG, "**---Car location --**");
+		L.i(TAG, "--> " + latLng2.latitude + "," + latLng2.longitude);
+		double distance = 0;
+		double diff_lat = latLng2.latitude - latLng1.latitude;
+		double diff_lng = latLng2.longitude - latLng1.longitude;
+
+		L.i(TAG, "diff_lat/2=" + diff_lat / 2);
+		L.i(TAG, "diff_lng/2=" + diff_lng / 2);
+		L.i(TAG, "sin(diff_lat/2)=" + Math.sin(Math.toRadians(diff_lat / 2)));
+		L.i(TAG, "sin(diff_lng/2)=" + Math.sin(Math.toRadians(diff_lng / 2)));
+
+		// Haversine formula:
+		// a = sin²(Δlat/2) + cos(lat1).cos(lat2).sin²(Δlong/2)
+		// c = 2.atan2(√a, √(1−a))
+		// d = R.c
+
+		double sineValue1 = Math.sin(Math.toRadians(diff_lat / 2)) * Math.sin(Math.toRadians(diff_lat / 2));
+		double sineValue2 = Math.sin(Math.toRadians(diff_lng / 2)) * Math.sin(Math.toRadians(diff_lng / 2));
+		L.i(TAG, "sineValue1=" + sineValue1);
+		L.i(TAG, "sineValue2=" + sineValue2);
+		double a = sineValue1 + Math.cos(Math.toRadians(latLng1.latitude)) * Math.cos(Math.toRadians(latLng2.latitude)) * sineValue2;
+		L.i(TAG, "a=" + a);
+		double c = 2 * Math.atan2(Math.toRadians(Math.sqrt(a)), Math.toRadians(Math.sqrt(1 - a)));
+		L.i(TAG, "c=" + c);
+		distance = Math.round(EARTH_RADIUS * c);
+		L.i(TAG, "Inside findDistance() -> distance=" + distance);
+		return distance;
+	}
+
+	public static boolean isNavServiceRunning(Context context) {
+		ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+		for (RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+			if (PNavigationService.class.getName().equals(service.service.getClassName())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+//	public void setMyLatLng(LatLng latLng) {
+//		this.myLatLng = latLng;
+//	}
+//
+//	public LatLng getMyLatLng() {
+//		return myLatLng;
+//	}
+
+	public void callActivityResumed() {
+		Intent i = new Intent();
+		i.putExtra(PNavigationHelper.NAV_ACTION, PNavigationHelper.ACTIVITY_RESUMED);
+		sendBroadCast(i);
+	}
+
+	public void callActivityPaused() {
+		Intent i = new Intent();
+		i.putExtra(PNavigationHelper.NAV_ACTION, PNavigationHelper.ACTIVITY_PAUSED);
+		sendBroadCast(i);
+	}
+
+	public LatLng getCarLatLng(String parkerentryid) {
+
+		if (ApplicationSettings.getCustomCarLocation(activity.getApplicationContext()) != null) {
+			try {
+				JSONArray locationArray = new JSONArray(ApplicationSettings.getCustomCarLocation(activity.getApplicationContext()));
+				for (int i = 0; i < locationArray.length(); i++) {
+					JSONObject locationObject = locationArray.getJSONObject(i);
+					if (locationObject.optString("id").equals(parkerentryid)) {
+						String[] location = locationObject.optString("location").split(",");
+						return new LatLng(Double.parseDouble(location[0]), Double.parseDouble(location[1]));
+					}
+				}
+			} catch (JSONException e) {
+				e.printStackTrace();
+			}
+		}
+
+		if (ApplicationSettings.getSpaceLocation(activity.getApplicationContext()) != null) {
+			String[] location = ApplicationSettings.getSpaceLocation(activity.getApplicationContext()).split(",");
+			return new LatLng(Double.parseDouble(location[0]), Double.parseDouble(location[1]));
+
+		}
+
+		if (ApplicationSettings.getZoneLocation(activity.getApplicationContext()) != null) {
+			String[] location = ApplicationSettings.getZoneLocation(activity.getApplicationContext()).split(",");
+			return new LatLng(Double.parseDouble(location[0]), Double.parseDouble(location[1]));
+		}
+
+		return null;
+
+	}
+
+	public static Location getLocation(LatLng carLatLng) {
+		Location location = new Location("");
+		location.setLatitude(carLatLng.latitude);
+		location.setLongitude(carLatLng.longitude);
+
+		return location;
+	}
+}
