@@ -29,13 +29,13 @@ import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 
-public class MainActivity extends FragmentActivity implements NavigationListener {
+public class MainActivity extends FragmentActivity implements PNavigationListener {
 
 	private GoogleMap map;
 	private LatLng myLatLng, carLatLng;
 	private Location myLocation;
 	private float rotate;
-	private NavigationHelper findMyCarHelper;
+	private PNavigationHelper findMyCarHelper;
 	private TextView distanceText, accuracyText, progressText;
 	private ImageButton btnMyLoc, btnEditLoc;
 	private Button btnMapTypeChange;
@@ -115,7 +115,7 @@ public class MainActivity extends FragmentActivity implements NavigationListener
 			return;
 		}
 
-		findMyCarHelper = new NavigationHelper(this);
+		findMyCarHelper = new PNavigationHelper(this);
 		findMyCarHelper.setPNavigationListener(this);
 		carLatLng = getCarLatLng();
 
@@ -158,7 +158,7 @@ public class MainActivity extends FragmentActivity implements NavigationListener
 	}
 
 	private void changeUi() {
-		float distanceInmeters = myLocation.distanceTo(NavigationHelper.getLocation(carLatLng));
+		float distanceInmeters = myLocation.distanceTo(PNavigationHelper.getLocation(carLatLng));
 		// double distanceInmeters = findDistance(myLatLng, carLatLng);
 		distanceText.setText("Distance: " + String.format("%.2f", distanceInmeters) + " m");
 		accuracyText.setText("Accuracy: " + myLocation.getAccuracy() + " m");

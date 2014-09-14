@@ -46,7 +46,7 @@
             </intent-filter>
         </activity>
         
-        <service android:name=".NavigationService" >
+        <service android:name=".PNavigationService" >
         </service>
         
     </application>

@@ -29,7 +29,7 @@ import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 
-public class MainActivity extends FragmentActivity implements NavigationListener {
+public class MainActivity extends FragmentActivity implements PNavigationListener {
 
 	private GoogleMap map;
 	private LatLng myLatLng, carLatLng;
